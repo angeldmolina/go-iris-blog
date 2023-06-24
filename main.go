@@ -1,94 +1,48 @@
 package main
 
 import (
-	"log"
-
-	"gorm.io/driver/sqlite"
-	"gorm.io/gorm"
+	database "myapp/pkg"
 
 	"github.com/kataras/iris/v12"
 	"github.com/kataras/iris/v12/middleware/logger"
 )
 
 // Post represents a blog post.
-type Post struct {
-	gorm.Model
-	Title string `json:"title"`
-	Body  string `json:"body"`
-}
+type Post database.Post
 
-// Database connection
-var db *gorm.DB
-
-// Initialize database connection
-func initDatabase() {
-	var err error
-	db, err = gorm.Open(sqlite.Open("blog.db"), &gorm.Config{})
-	if err != nil {
-		log.Fatal(err)
-	}
-
-	db.AutoMigrate(&Post{})
-}
-
-// getPosts returns all blog posts.
 func getPosts(ctx iris.Context) {
-	var posts []Post
-	db.Find(&posts)
+	posts := database.GetPosts()
 	ctx.JSON(posts)
 }
 
-// getPostByID returns a specific blog post by its ID.
 func getPostByID(ctx iris.Context) {
-	id, err := ctx.Params().GetUint("id")
+	id, _ := ctx.Params().GetUint("id")
+	post, err := database.GetPostByID(id)
 	if err != nil {
-		ctx.StatusCode(iris.StatusBadRequest)
-		return
-	}
-
-	var post Post
-	result := db.First(&post, id)
-	if result.Error != nil {
 		ctx.StatusCode(iris.StatusNotFound)
 		return
 	}
-
 	ctx.JSON(post)
 }
 
-// createPost creates a new blog post.
 func createPost(ctx iris.Context) {
-	var post Post
-	err := ctx.ReadJSON(&post)
+	var post database.Post
+	ctx.ReadJSON(&post)
+	err := database.CreatePost(&post)
 	if err != nil {
-		ctx.StatusCode(iris.StatusBadRequest)
-		return
-	}
-
-	result := db.Create(&post)
-	if result.Error != nil {
 		ctx.StatusCode(iris.StatusInternalServerError)
 		return
 	}
-
 	ctx.StatusCode(iris.StatusCreated)
 }
 
-// deletePost deletes a blog post by its ID.
 func deletePost(ctx iris.Context) {
-	id, err := ctx.Params().GetUint("id")
+	id, _ := ctx.Params().GetUint("id")
+	err := database.DeletePost(id)
 	if err != nil {
-		ctx.StatusCode(iris.StatusBadRequest)
-		return
-	}
-
-	var post Post
-	result := db.Delete(&post, id)
-	if result.Error != nil || result.RowsAffected == 0 {
 		ctx.StatusCode(iris.StatusNotFound)
 		return
 	}
-
 	ctx.StatusCode(iris.StatusNoContent)
 }
 
@@ -96,7 +50,7 @@ func main() {
 	app := iris.New()
 	app.Use(logger.New())
 
-	initDatabase()
+	database.ConnectDb()
 
 	// Define the routes for the API.
 	app.Get("/posts", getPosts)
