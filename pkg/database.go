@@ -61,3 +61,44 @@ func DeletePost(id uint) (err error) {
 	}
 	return
 }
+
+// Comment represents a comment on a blog post
+type Comment struct {
+	gorm.Model
+	PostID uint
+	Body   string `json:"body"`
+}
+
+// GetCommentsForPost returns all comments for a post
+func GetCommentsForPost(postID uint) ([]Comment, error) {
+	var comments []Comment
+	result := DB.Where("post_id = ?", postID).Find(&comments)
+	return comments, result.Error
+}
+
+// CreateComment creates a new comment for a post
+func CreateComment(comment *Comment) (err error) {
+	result := DB.Create(comment)
+	return result.Error
+}
+
+// Like represents a like on a blog post
+type Like struct {
+	gorm.Model
+	PostID uint
+	UserID uint
+}
+
+// GetLikesForPost returns the number of likes for a post
+func GetLikesForPost(postID uint) (int, error) {
+	var count int64
+	result := DB.Model(&Like{}).Where("post_id = ?", postID).Count(&count)
+	return int(count), result.Error
+}
+
+// AddLike adds a like for a post from a user
+func AddLike(postID, userID uint) (err error) {
+	like := Like{PostID: postID, UserID: userID}
+	result := DB.Create(&like)
+	return result.Error
+}
