@@ -2,7 +2,9 @@ package database
 
 import (
 	"log"
+	"time"
 
+	"github.com/dgrijalva/jwt-go"
 	"gorm.io/driver/sqlite"
 	"gorm.io/gorm"
 )
@@ -14,8 +16,17 @@ type Post struct {
 	Body  string `json:"body"`
 }
 
+// User represents a user in the system.
+type User struct {
+	ID       uint   `gorm:"primaryKey" json:"id"`
+	Username string `gorm:"unique;not null" json:"username"`
+	Password string `gorm:"not null" json:"-"`
+}
+
 // Database connection
 var DB *gorm.DB
+
+var jwtSecret = []byte("your-secret-key")
 
 // ConnectDb initializes database connection.
 func ConnectDb() {
@@ -101,4 +112,39 @@ func AddLike(postID, userID uint) (err error) {
 	like := Like{PostID: postID, UserID: userID}
 	result := DB.Create(&like)
 	return result.Error
+}
+
+// GenerateToken generates a new JWT token for a user.
+func GenerateToken(user *User) (string, error) {
+	claims := jwt.MapClaims{
+		"id":       user.ID,
+		"username": user.Username,
+		"exp":      time.Now().Add(time.Hour * 24).Unix(),
+	}
+
+	token := jwt.NewWithClaims(jwt.SigningMethodHS256, claims)
+	return token.SignedString(jwtSecret)
+}
+
+// VerifyToken verifies the authenticity of a JWT token and returns the associated user ID.
+func VerifyToken(tokenString string) (uint, error) {
+	token, err := jwt.Parse(tokenString, func(token *jwt.Token) (interface{}, error) {
+		return jwtSecret, nil
+	})
+
+	if err != nil {
+		return 0, err
+	}
+
+	claims, ok := token.Claims.(jwt.MapClaims)
+	if !ok || !token.Valid {
+		return 0, jwt.ErrInvalidKey
+	}
+
+	userID, ok := claims["id"].(float64)
+	if !ok {
+		return 0, jwt.ErrInvalidKey
+	}
+
+	return uint(userID), nil
 }
