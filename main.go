@@ -20,8 +20,14 @@ var redisClient *redis.Client
 // Post represents a blog post.
 type Post database.Post
 
+// getPosts returns all blog posts, utilizing Redis caching if available.
 func getPosts(ctx iris.Context) {
-	posts := database.GetPosts()
+	posts, err := getPostsFromCache()
+	if err != nil {
+		ctx.StatusCode(iris.StatusInternalServerError)
+		return
+	}
+
 	ctx.JSON(posts)
 }
 
