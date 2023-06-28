@@ -1,14 +1,21 @@
 package main
 
 import (
+	"context"
+	"encoding/json"
+	"fmt"
 	database "myapp/pkg"
 	"strings"
+	"time"
 
 	"golang.org/x/crypto/bcrypt"
 
+	"github.com/go-redis/redis/v8"
 	"github.com/kataras/iris/v12"
 	"github.com/kataras/iris/v12/middleware/logger"
 )
+
+var redisClient *redis.Client
 
 // Post represents a blog post.
 type Post database.Post
@@ -101,6 +108,46 @@ func authenticateMiddleware(ctx iris.Context) {
 
 	ctx.Values().Set("userID", userID)
 	ctx.Next()
+}
+
+// Initialize Redis client
+func initRedis() {
+	redisClient = redis.NewClient(&redis.Options{
+		Addr:     "localhost:6379", // Replace with your Redis server address
+		Password: "",               // Replace with your Redis server password
+		DB:       0,                // Replace with your Redis database index
+	})
+}
+
+// getPostsFromCache retrieves blog posts from the Redis cache if available,
+// otherwise retrieves them from the database and stores them in the cache.
+func getPostsFromCache() ([]Post, error) {
+	ctx := context.Background()
+	cacheKey := "posts"
+
+	// Check if posts exist in the cache
+	if val, err := redisClient.Get(ctx, cacheKey).Result(); err == nil {
+		var posts []Post
+		if err := json.Unmarshal([]byte(val), &posts); err != nil {
+			return nil, err
+		}
+		return posts, nil
+	}
+
+	// Retrieve posts from the database
+	var posts []Post
+	if result := database.DB.Find(&posts); result.Error != nil {
+		return nil, result.Error
+	}
+
+	// Store posts in the cache
+	if postsJSON, err := json.Marshal(posts); err == nil {
+		if err := redisClient.Set(ctx, cacheKey, postsJSON, 10*time.Minute).Err(); err != nil {
+			fmt.Println("Failed to cache posts:", err)
+		}
+	}
+
+	return posts, nil
 }
 
 func main() {
