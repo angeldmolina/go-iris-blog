@@ -41,14 +41,26 @@ func getPostByID(ctx iris.Context) {
 	ctx.JSON(post)
 }
 
+// createPost creates a new blog post and clears the posts cache.
 func createPost(ctx iris.Context) {
-	var post database.Post
-	ctx.ReadJSON(&post)
-	err := database.CreatePost(&post)
+	var post Post
+	err := ctx.ReadJSON(&post)
 	if err != nil {
+		ctx.StatusCode(iris.StatusBadRequest)
+		return
+	}
+
+	result := database.DB.Create(&post)
+	if result.Error != nil {
 		ctx.StatusCode(iris.StatusInternalServerError)
 		return
 	}
+
+	// Clear posts cache
+	if err := redisClient.Del(context.Background(), "posts").Err(); err != nil {
+		fmt.Println("Failed to clear posts cache:", err)
+	}
+
 	ctx.StatusCode(iris.StatusCreated)
 }
 
@@ -161,6 +173,8 @@ func main() {
 	app.Use(logger.New())
 
 	database.ConnectDb()
+	// Initialize Redis client
+	initRedis()
 
 	// Authenticate user
 	app.Post("/authenticate", authenticate)
