@@ -20,17 +20,6 @@ var redisClient *redis.Client
 // Post represents a blog post.
 type Post database.Post
 
-// getPosts returns all blog posts, utilizing Redis caching if available.
-func getPosts(ctx iris.Context) {
-	posts, err := getPostsFromCache()
-	if err != nil {
-		ctx.StatusCode(iris.StatusInternalServerError)
-		return
-	}
-
-	ctx.JSON(posts)
-}
-
 // searchPosts searches for blog posts based on a search query.
 func searchPosts(ctx iris.Context) {
 	query := ctx.URLParam("q")
@@ -41,6 +30,27 @@ func searchPosts(ctx iris.Context) {
 
 	var posts []Post
 	if result := database.DB.Where("title LIKE ? OR body LIKE ?", "%"+query+"%", "%"+query+"%").Find(&posts); result.Error != nil {
+		ctx.StatusCode(iris.StatusInternalServerError)
+		return
+	}
+
+	ctx.JSON(posts)
+}
+
+// getPaginatedPosts returns a paginated list of blog posts.
+func getPaginatedPosts(ctx iris.Context) {
+	page, err := ctx.URLParamInt("page")
+	if err != nil || page <= 0 {
+		page = 1
+	}
+
+	pageSize, err := ctx.URLParamInt("pageSize")
+	if err != nil || pageSize <= 0 {
+		pageSize = 10
+	}
+
+	posts, err := getPostsFromCache(page, pageSize)
+	if err != nil {
 		ctx.StatusCode(iris.StatusInternalServerError)
 		return
 	}
@@ -154,13 +164,13 @@ func initRedis() {
 	})
 }
 
-// getPostsFromCache retrieves blog posts from the Redis cache if available,
-// otherwise retrieves them from the database and stores them in the cache.
-func getPostsFromCache() ([]Post, error) {
+// getPostsFromCache retrieves paginated blog posts from the Redis cache if available,
+// otherwise retrieves them from the database, paginates the results, and stores them in the cache.
+func getPostsFromCache(page, pageSize int) ([]Post, error) {
 	ctx := context.Background()
-	cacheKey := "posts"
+	cacheKey := fmt.Sprintf("posts:%d:%d", page, pageSize)
 
-	// Check if posts exist in the cache
+	// Check if paginated posts exist in the cache
 	if val, err := redisClient.Get(ctx, cacheKey).Result(); err == nil {
 		var posts []Post
 		if err := json.Unmarshal([]byte(val), &posts); err != nil {
@@ -169,16 +179,19 @@ func getPostsFromCache() ([]Post, error) {
 		return posts, nil
 	}
 
-	// Retrieve posts from the database
+	// Calculate offset for pagination
+	offset := (page - 1) * pageSize
+
+	// Retrieve paginated posts from the database
 	var posts []Post
-	if result := database.DB.Find(&posts); result.Error != nil {
+	if result := database.DB.Offset(offset).Limit(pageSize).Find(&posts); result.Error != nil {
 		return nil, result.Error
 	}
 
-	// Store posts in the cache
+	// Store paginated posts in the cache
 	if postsJSON, err := json.Marshal(posts); err == nil {
 		if err := redisClient.Set(ctx, cacheKey, postsJSON, 10*time.Minute).Err(); err != nil {
-			fmt.Println("Failed to cache posts:", err)
+			fmt.Println("Failed to cache paginated posts:", err)
 		}
 	}
 
@@ -201,7 +214,7 @@ func main() {
 	authGroup.Use(authenticateMiddleware)
 
 	// Define the routes for the API.
-	app.Get("/posts", getPosts)
+	app.Get("/posts", getPaginatedPosts)
 	app.Get("/search", searchPosts)
 	app.Get("/posts/{id:uint}", getPostByID)
 	app.Post("/posts", createPost)
