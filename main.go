@@ -31,6 +31,23 @@ func getPosts(ctx iris.Context) {
 	ctx.JSON(posts)
 }
 
+// searchPosts searches for blog posts based on a search query.
+func searchPosts(ctx iris.Context) {
+	query := ctx.URLParam("q")
+	if query == "" {
+		ctx.StatusCode(iris.StatusBadRequest)
+		return
+	}
+
+	var posts []Post
+	if result := database.DB.Where("title LIKE ? OR body LIKE ?", "%"+query+"%", "%"+query+"%").Find(&posts); result.Error != nil {
+		ctx.StatusCode(iris.StatusInternalServerError)
+		return
+	}
+
+	ctx.JSON(posts)
+}
+
 func getPostByID(ctx iris.Context) {
 	id, _ := ctx.Params().GetUint("id")
 	post, err := database.GetPostByID(id)
