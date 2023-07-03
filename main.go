@@ -202,6 +202,7 @@ func main() {
 
 	// Define the routes for the API.
 	app.Get("/posts", getPosts)
+	app.Get("/search", searchPosts)
 	app.Get("/posts/{id:uint}", getPostByID)
 	app.Post("/posts", createPost)
 	app.Delete("/posts/{id:uint}", deletePost)
